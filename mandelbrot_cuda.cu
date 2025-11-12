@@ -1,64 +1,67 @@
-// mandelbrot_cuda.cu
-// Compilar: nvcc -O3 mandelbrot_cuda.cu -o mandelbrot
-// Executar: ./mandelbrot mandelbrot.ppm
-
 #include <cstdio>
 #include <cstdlib>
 #include <cmath>
-#include <sys/time.h>
+#include <sys/time.h>      // ⏱️ Para medir tempo
 #include <cuda_runtime.h>
 
+// Verifica erros do CUDA (para facilitar debug)
 #define CUDA_CHECK(call) do {                                 \
     cudaError_t err = (call);                                 \
     if (err != cudaSuccess) {                                 \
-        fprintf(stderr, "CUDA error %s:%d: %s\n",             \
+        fprintf(stderr, "Erro CUDA %s:%d: %s\n",              \
                 __FILE__, __LINE__, cudaGetErrorString(err)); \
         exit(EXIT_FAILURE);                                   \
     }                                                         \
 } while(0)
 
-// Mapeamento simples de 'iter' para cor RGB
-__device__ void iteration_to_color(int iter, int maxIter, unsigned char &r, unsigned char &g, unsigned char &b) {
-    if (iter >= maxIter) {
-        r = g = b = 0;
-        return;
-    }
-    float t = (float)iter / (float)maxIter;
-    r = (unsigned char)(9 * (1 - t) * t * t * t * 255);
-    g = (unsigned char)(15 * (1 - t) * (1 - t) * t * t * 255);
-    b = (unsigned char)(8.5 * (1 - t) * (1 - t) * (1 - t) * t * 255);
+// Função auxiliar para medir tempo em segundos
+double now_seconds() {
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    return tv.tv_sec + tv.tv_usec * 1e-6;
 }
 
-// Kernel: cada thread calcula 1 pixel
-__global__ void mandelbrot_kernel(unsigned char* img, int width, int height,
-                                  float xmin, float xmax, float ymin, float ymax,
-                                  int maxIter)
-{
+// Função para definir a cor de cada pixel
+__device__ void iteration_to_color(int iter, int maxIter,
+                                   unsigned char &r, unsigned char &g, unsigned char &b) {
+    if (iter == maxIter) {
+        // Pontos "dentro" do fractal — fundo preto
+        r = g = b = 0;
+    } else {
+        // Gradiente de cores baseado em iterações
+        float t = (float)iter / (float)maxIter;
+        r = (unsigned char)(9 * (1 - t) * t * t * t * 255);
+        g = (unsigned char)(15 * (1 - t) * (1 - t) * t * t * 255);
+        b = (unsigned char)(8.5 * (1 - t) * (1 - t) * (1 - t) * t * 255);
+    }
+}
+
+// Cada thread calcula um pixel
+__global__ void julia_kernel(unsigned char* img, int width, int height,
+                             float xmin, float xmax, float ymin, float ymax,
+                             int maxIter, float cx, float cy) {
     int px = blockIdx.x * blockDim.x + threadIdx.x;
     int py = blockIdx.y * blockDim.y + threadIdx.y;
     if (px >= width || py >= height) return;
 
-    int idx = (py * width + px) * 3; // 3 canais RGB
+    int idx = (py * width + px) * 3; // posição RGB do pixel
 
-    // Map pixel -> ponto complexo c
-    float x0 = xmin + (xmax - xmin) * (px + 0.5f) / (float)width;
-    float y0 = ymin + (ymax - ymin) * (py + 0.5f) / (float)height;
+    // Converter coordenadas de pixel → coordenadas complexas (x0, y0)
+    float x = xmin + (xmax - xmin) * px / (float)width;
+    float y = ymin + (ymax - ymin) * py / (float)height;
 
-    float x = 0.0f;
-    float y = 0.0f;
-    float x2 = 0.0f;
-    float y2 = 0.0f;
     int iter = 0;
 
-    while (x2 + y2 <= 4.0f && iter < maxIter) {
-        y = 2.0f * x * y + y0;
-        x = x2 - y2 + x0;
-        x2 = x * x;
-        y2 = y * y;
+    // Fórmula do conjunto de Julia:
+    // z = z² + c  (c é fixo e muda o formato)
+    while (x * x + y * y <= 4.0f && iter < maxIter) {
+        float xtemp = x * x - y * y + cx;
+        y = 2.0f * x * y + cy;
+        x = xtemp;
         iter++;
     }
 
-    unsigned char r,g,b;
+    unsigned char r, g, b;
     iteration_to_color(iter, maxIter, r, g, b);
 
     img[idx + 0] = r;
@@ -66,68 +69,61 @@ __global__ void mandelbrot_kernel(unsigned char* img, int width, int height,
     img[idx + 2] = b;
 }
 
-// escreve PPM (P6)
+// Salva imagem no formato PPM (simples)
 void write_ppm(const char* filename, unsigned char* data, int width, int height) {
     FILE* f = fopen(filename, "wb");
-    if (!f) {
-        perror("fopen");
-        exit(EXIT_FAILURE);
-    }
     fprintf(f, "P6\n%d %d\n255\n", width, height);
-    size_t total = (size_t)width * (size_t)height * 3;
-    fwrite(data, 1, total, f);
+    fwrite(data, 1, width * height * 3, f);
     fclose(f);
 }
 
-double now_seconds() {
-    struct timeval tv;
-    gettimeofday(&tv, NULL);
-    return tv.tv_sec + tv.tv_usec * 1e-6;
-}
-
 int main(int argc, char** argv) {
-    const char* outname = "mandelbrot.ppm";
-    if (argc >= 2) outname = argv[1];
+    const char* filename = (argc >= 2) ? argv[1] : "julia.ppm";
 
-    // parâmetros (muda se quiser)
-    const int width = 1280;
-    const int height = 720;
+    const int width = 1280, height = 720;
     const int maxIter = 1000;
 
-    const float xmin = -2.0f;
-    const float xmax = 1.0f;
-    const float ymin = -1.0f;
-    const float ymax = 1.0f;
+    // Área do plano complexo
+    const float xmin = -1.5f, xmax = 1.5f;
+    const float ymin = -1.0f, ymax = 1.0f;
 
-    size_t img_size = (size_t)width * (size_t)height * 3; // bytes
+    // Constante c do fractal (muda o formato! experimente valores diferentes!)
+    const float cx = -0.7f;
+    const float cy = 0.27015f;
 
+    size_t img_size = width * height * 3;
     unsigned char* h_img = (unsigned char*)malloc(img_size);
-    if (!h_img) {
-        fprintf(stderr, "Falha ao alocar memória host\n");
-        return 1;
-    }
-
     unsigned char* d_img = nullptr;
     CUDA_CHECK(cudaMalloc((void**)&d_img, img_size));
 
-    // blocos e grade
+    // Configuração de blocos e threads
     dim3 block(16, 16);
-    dim3 grid((width + block.x - 1) / block.x, (height + block.y - 1) / block.y);
+    dim3 grid((width + 15) / 16, (height + 15) / 16);
 
+    // ⏱️ Marca o tempo antes do kernel
     double t0 = now_seconds();
-    mandelbrot_kernel<<<grid, block>>>(d_img, width, height, xmin, xmax, ymin, ymax, maxIter);
+
+    // Executa o kernel CUDA
+    julia_kernel<<<grid, block>>>(d_img, width, height, xmin, xmax, ymin, ymax, maxIter, cx, cy);
     CUDA_CHECK(cudaGetLastError());
     CUDA_CHECK(cudaDeviceSynchronize());
+
+    // ⏱️ Marca o tempo após o kernel
     double t1 = now_seconds();
+    printf("Tempo total de execução do kernel: %.4f segundos\n", t1 - t0);
 
     CUDA_CHECK(cudaMemcpy(h_img, d_img, img_size, cudaMemcpyDeviceToHost));
 
-    write_ppm(outname, h_img, width, height);
+    write_ppm(filename, h_img, width, height);
+    printf("Imagem salva em '%s'\n", filename);
 
-    printf("Imagem salva em '%s' (%dx%d), maxIter=%d\n", outname, width, height, maxIter);
-    printf("Tempo kernel+sync: %.4f s\n", t1 - t0);
-
-    CUDA_CHECK(cudaFree(d_img));
     free(h_img);
+    CUDA_CHECK(cudaFree(d_img));
     return 0;
 }
+
+// ---- COMANDOS TERMINAL ----
+// nvcc -O3 mandelbrot_cuda.cu -o mandelbrot
+// ./mandelbrot mandelbrot.ppm
+// convert mandelbrot.ppm mandelbrot.png
+// xdg-open mandelbrot.png

@@ -1,0 +1,24 @@
+Tempo total de execução com cuda: 0.0011 segundos
+Tempo total de execução com cuda: 0.0021 segundos
+Tempo total de execução com cuda: 0.0014 segundos
+Tempo total de execução com cuda: 0.0014 segundos
+Tempo total de execução com cuda: 0.0035 segundos
+Tempo total de execução com cuda: 0.0012 segundos
+Tempo total de execução com cuda: 0.0014 segundos
+Tempo total de execução com cuda: 0.0014 segundos
+Tempo total de execução com cuda: 0.0016 segundos
+Tempo total de execução com cuda: 0.0015 segundos
+
+
+
+
+Tempo total (sequencial): 3.30659 segundos
+Tempo total (sequencial): 2.77947 segundos
+Tempo total (sequencial): 2.81782 segundos
+Tempo total (sequencial): 4.37954 segundos
+Tempo total (sequencial): 4.14371 segundos
+Tempo total (sequencial): 4.12079 segundos
+Tempo total (sequencial): 5.95773 segundos
+Tempo total (sequencial): 4.62502 segundos
+Tempo total (sequencial): 4.67044 segundos
+Tempo total (sequencial): 3.74854 segundos
