@@ -10,7 +10,7 @@ Tempo total de execução com cuda: 0.0016 segundos
 Tempo total de execução com cuda: 0.0015 segundos
 
 
-
+--------------------------------------------------------
 
 Tempo total (sequencial): 3.30659 segundos
 Tempo total (sequencial): 2.77947 segundos
@@ -22,3 +22,39 @@ Tempo total (sequencial): 5.95773 segundos
 Tempo total (sequencial): 4.62502 segundos
 Tempo total (sequencial): 4.67044 segundos
 Tempo total (sequencial): 3.74854 segundos
+
+
+-------------------------------------------------------
+1. Tempos médios
+
+Sequencial (CPU): 4.0549 s
+Paralelo (CUDA): 0.00166 s
+
+
+-------------------------------------------------------
+2. Fração paralelizável (α)
+
+
+a = (T(seq) - T(par)) / (T(seq))
+
+
+
+a = (4.0549 - 0.00166)/ (4.0549) = 0.9996
+
+
+99,96% do algoritmo é paralelizável.
+
+
+-----------------------------------------------------
+3. Speedup (Lei de Gustafson)
+
+
+Speedup = (T(seq))(T(par))
+
+
+Speedup = (4.0549)(0.00166) ≃ 2443
+
+
+A versão CUDA foi cerca de 2443 vezes mais rápida.
+
+

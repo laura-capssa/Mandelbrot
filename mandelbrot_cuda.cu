@@ -1,7 +1,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cmath>
-#include <sys/time.h>      // ⏱️ Para medir tempo
+#include <sys/time.h>      // Para medir tempo
 #include <cuda_runtime.h>
 
 // Verifica erros do CUDA (para facilitar debug)
